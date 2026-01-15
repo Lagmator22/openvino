@@ -3,7 +3,8 @@
 //
 
 #include "eltwise.hpp"
-
+#include <iostream>
+#include <typeinfo>
 #include <oneapi/dnnl/dnnl_types.h>
 
 #include <algorithm>
@@ -88,6 +89,8 @@ static EltwiseExecutorPtr createRefExecutorByPrecision(const EltwiseRefKey& key)
         return std::make_shared<BitwiseRefExecutor<int32_t>>(key);
     case ov::element::f16:
         return std::make_shared<EltwiseRefExecutor<dnnl::impl::float16_t>>(key);
+    case ov::element::f64:
+        return std::make_shared<EltwiseRefExecutor<double>>(key);
     default:
         // Use float reference executor for any other precision
         return std::make_shared<EltwiseRefExecutor<float>>(key);
@@ -229,12 +232,19 @@ EltwiseRefExecutor<T, Enable>::EltwiseRefExecutor(const EltwiseRefKey& key) : El
 
 template <typename T, typename Enable>
 void EltwiseRefExecutor<T, Enable>::exec(const jit_eltwise_call_args_ptrs& args_ptrs, const VectorDims& dims_out) {
+    
+    // Debug print check for Division
+    if (this->m_opData.algo == Algorithm::EltwiseDivide) {
+         // Using typeid name to verify we are in the double specialized template if T=double
+         std::cerr << "[DEBUG] Reference Executor: Running Divide Op (T=" << typeid(T).name() << ")" << std::endl;
+    }
+
     // Handle special cases first
     if (this->m_opData.algo == Algorithm::EltwiseLog) {
         const T* src_ptr_f = reinterpret_cast<const T*>(args_ptrs.src_ptr[0]);
         T* dst_ptr_f = reinterpret_cast<T*>(args_ptrs.dst_ptr);
         parallel_for(this->m_fullWorkAmount, [&](size_t i) {
-            dst_ptr_f[i] = logf(src_ptr_f[i]);
+            dst_ptr_f[i] = std::log(src_ptr_f[i]);
         });
         return;
     }
@@ -249,7 +259,7 @@ void EltwiseRefExecutor<T, Enable>::exec(const jit_eltwise_call_args_ptrs& args_
             });
         } else {
             parallel_for(this->m_fullWorkAmount, [&](size_t i) {
-                dst_ptr_f[i] = powf(this->m_opData.beta * src_ptr_f[i] + this->m_opData.gamma, this->m_opData.alpha);
+                dst_ptr_f[i] = std::pow(this->m_opData.beta * src_ptr_f[i] + this->m_opData.gamma, this->m_opData.alpha);
             });
         }
         return;
@@ -309,22 +319,27 @@ void EltwiseRefExecutor<T, Enable>::exec(const jit_eltwise_call_args_ptrs& args_
                 *dst_ptr_f = src_f[0] * src_f[1];
                 break;
             case Algorithm::EltwiseDivide:
-                *dst_ptr_f = src_f[0] / src_f[1];
+                // Correct Infinity handling for f64
+                if (src_f[1] == 0) {
+                     *dst_ptr_f = std::numeric_limits<T>::infinity();
+                } else {
+                     *dst_ptr_f = src_f[0] / src_f[1];
+                }
                 break;
             case Algorithm::EltwiseCeiling:
-                *dst_ptr_f = ceilf(src_f[0]);
+                *dst_ptr_f = std::ceil(src_f[0]);
                 break;
             case Algorithm::EltwiseFloor:
-                *dst_ptr_f = floorf(src_f[0]);
+                *dst_ptr_f = std::floor(src_f[0]);
                 break;
             case Algorithm::EltwiseNegative:
                 *dst_ptr_f = -src_f[0];
                 break;
             case Algorithm::EltwiseFloorMod:
-                *dst_ptr_f = src_f[0] - floorf(src_f[0] / src_f[1]) * src_f[1];
+                *dst_ptr_f = src_f[0] - std::floor(src_f[0] / src_f[1]) * src_f[1];
                 break;
             case Algorithm::EltwiseMod:
-                *dst_ptr_f = src_f[0] - truncf(src_f[0] / src_f[1]) * src_f[1];
+                *dst_ptr_f = src_f[0] - std::trunc(src_f[0] / src_f[1]) * src_f[1];
                 break;
             case Algorithm::EltwiseMaximum:
                 *dst_ptr_f = std::max(src_f[0], src_f[1]);
@@ -333,13 +348,13 @@ void EltwiseRefExecutor<T, Enable>::exec(const jit_eltwise_call_args_ptrs& args_
                 *dst_ptr_f = std::min(src_f[0], src_f[1]);
                 break;
             case Algorithm::EltwiseExp:
-                *dst_ptr_f = expf(src_f[0]);
+                *dst_ptr_f = std::exp(src_f[0]);
                 break;
             case Algorithm::EltwiseSquaredDifference:
-                *dst_ptr_f = powf((src_f[0] - src_f[1]), 2.F);
+                *dst_ptr_f = std::pow((src_f[0] - src_f[1]), static_cast<T>(2.0));
                 break;
             case Algorithm::EltwisePowerDynamic:
-                *dst_ptr_f = powf(src_f[0], src_f[1]);
+                *dst_ptr_f = std::pow(src_f[0], src_f[1]);
                 break;
             case Algorithm::EltwiseEqual:
                 *dst_ptr_f = src_f[0] == src_f[1];
@@ -471,9 +486,11 @@ template class EltwiseRefBaseExecutor<uint8_t>;
 template class EltwiseRefBaseExecutor<int16_t>;
 template class EltwiseRefBaseExecutor<uint16_t>;
 template class EltwiseRefBaseExecutor<int32_t>;
+template class EltwiseRefBaseExecutor<double>;
 
 template class EltwiseRefExecutor<float>;
 template class EltwiseRefExecutor<dnnl::impl::float16_t>;
+template class EltwiseRefExecutor<double>;
 
 template class BitwiseRefExecutor<int8_t>;
 template class BitwiseRefExecutor<uint8_t>;

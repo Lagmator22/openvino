@@ -4,6 +4,7 @@
 
 #include "acl_eltwise.hpp"
 
+#include <iostream> 
 #include <arm_compute/core/CoreTypes.h>
 #include <arm_compute/core/Dimensions.h>
 #include <arm_compute/core/Rounding.h>
@@ -76,6 +77,20 @@ inline void log_unsupported_prec(const std::vector<MemoryDescPtr>& srcDescs,
 }
 
 bool AclEltwiseExecutor::supports(const EltwiseConfig& config) {
+    // --- KILL SWITCH START ---
+    if (config.attrs.data.algo == Algorithm::EltwiseDivide) {
+        for (const auto& [argId, desc] : config.descs) {
+             if (desc->getPrecision() == ov::element::f64) {
+                 std::cerr << "[DEBUG] ACL Executor: REJECTING f64 Divide (Fallback to Ref)" << std::endl;
+                 return false;
+             }
+        }
+    }
+    // --- KILL SWITCH END ---
+
+    if (config.attrs.data.algo == Algorithm::EltwiseDivide) {
+        return false;
+    }
     std::vector<MemoryDescPtr> srcDescs(config.descs.size() - 1);
     std::vector<MemoryDescPtr> dstDescs{config.descs.at(ARG_DST)};
 
@@ -207,6 +222,9 @@ AclEltwiseExecutor::AclEltwiseExecutor(EltwiseAttrs attrs,
     : aclEltwiseAttrs(std::move(attrs)) {}
 
 bool AclEltwiseExecutor::init(const std::vector<MemoryDescPtr>& srcDescs, const std::vector<MemoryDescPtr>& dstDescs) {
+    if (aclEltwiseAttrs.data.algo == Algorithm::EltwiseDivide) {
+        return false;
+    }
     auto postOps = aclEltwiseAttrs.postOps;
 
     if (!postOps.empty()) {

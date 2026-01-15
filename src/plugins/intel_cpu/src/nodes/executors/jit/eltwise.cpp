@@ -4,6 +4,7 @@
 
 #include "nodes/executors/jit/eltwise.h"
 
+#include <iostream>
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
@@ -322,6 +323,7 @@ EltwiseJitExecutor::EltwiseJitExecutor(const Key& key)
 
 void EltwiseJitExecutor::exec(const jit_eltwise_call_args_ptrs& args_ptrs, const VectorDims& dims_out) {
     if (!m_kernel) {
+        std::cout << "DEBUG: JIT Executor is running (BAD, failed to block it)" << std::endl;
         OPENVINO_THROW("Can't execute, kernel for eltwise node is not compiled");
     }
 
@@ -374,6 +376,19 @@ bool EltwiseJitExecutor::supports(const EltwiseAttrs& attrs,
                                   const size_t rank,
                                   [[maybe_unused]] const std::vector<ov::element::Type>& input_precisions,
                                   [[maybe_unused]] const std::vector<ov::element::Type>& output_precisions) {
+    
+    // --- KILL SWITCH START (Fixed) ---
+    // Explicitly reject f64 Divide to force Reference implementation
+    if (attrs.data.algo == Algorithm::EltwiseDivide) {
+        for (const auto& prec : input_precisions) {
+            if (prec == ov::element::f64) {
+                 std::cerr << "[DEBUG] EltwiseJitExecutor: REJECTING f64 Divide!" << std::endl;
+                 return false;
+            }
+        }
+    }
+    // --- KILL SWITCH END ---
+
 #if defined(OPENVINO_ARCH_X86_64)
     const auto isISASupportedByJIT = dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::sse41);
 #elif defined(OPENVINO_ARCH_ARM64)
@@ -521,6 +536,9 @@ bool EltwiseJitExecutor::supports(const EltwiseAttrs& attrs,
 }
 
 bool EltwiseJitExecutor::supports(const EltwiseConfig& config) {
+    if (config.attrs.data.algo == Algorithm::EltwiseDivide) {
+        return false;
+    }
     std::vector<ov::element::Type> input_precisions(config.descs.size() - 1);  // -1 for output precision
     std::vector<ov::element::Type> output_precisions{
         config.descs.at(ARG_DST)->getPrecision()};  // -1 for output precision

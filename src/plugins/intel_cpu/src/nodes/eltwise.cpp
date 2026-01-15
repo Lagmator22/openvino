@@ -3,6 +3,7 @@
 //
 
 #include "eltwise.h"
+#include <iostream>
 
 #include <oneapi/dnnl/dnnl_types.h>
 
@@ -840,6 +841,7 @@ void Eltwise::createPrimitive() {
     m_memory[ARG_DST] = getDstMemoryAtPort(0);
 
     m_executor = m_factory->make(m_memory);
+
     getSelectedPrimitiveDescriptor()->setImplementationType(m_executor->implType());
 
     Node::createPrimitive();

@@ -43,6 +43,9 @@ static bool isEltwiseAlgorithmSupported(Algorithm algorithm) {
 }
 
 bool ShlEltwiseExecutor::supports(const EltwiseConfig& config) {
+    if (config.attrs.data.algo == Algorithm::EltwiseDivide) {
+        return false;
+    }
     const auto& eltwiseAttrs = config.attrs;
     if (!isEltwiseAlgorithmSupported(eltwiseAttrs.data.algo)) {
         DEBUG_LOG("Eltwise algorithm ", algToString(eltwiseAttrs.data.algo), " is not supported");
@@ -126,6 +129,9 @@ ShlEltwiseExecutor::ShlEltwiseExecutor(EltwiseAttrs attrs,
     : shlEltwiseAttrs(std::move(attrs)) {}
 
 bool ShlEltwiseExecutor::init(const std::vector<MemoryDescPtr>& srcDescs, const std::vector<MemoryDescPtr>& dstDescs) {
+    if (shlEltwiseAttrs.data.algo == Algorithm::EltwiseDivide) {
+        return false;
+    }
     const auto& postOps = shlEltwiseAttrs.postOps;
 
     if (!postOps.empty()) {

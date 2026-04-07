@@ -2565,24 +2565,8 @@ TEST(eltwise_gpu_int, basic_in4x4x4x4) {
 
     for (auto& data_type : data_types_to_test)
     {
-        bool is_unsigned = data_type == data_types::u8 || data_type == data_types::u16 || data_type == data_types::u32;
-        // INT8/INT16/UINT8/UINT16 use F32 accumulator, so division/modulo give float results
-        // not integer truncation. Skip these modes for small integer types.
-        bool uses_float_acc = data_type == data_types::i8 || data_type == data_types::i16 ||
-                              data_type == data_types::u8 || data_type == data_types::u16;
-
         for (auto& mode : eltwise_ops_to_test)
         {
-            // Skip div/mod/floor_mod for types with float accumulator - GPU does float division
-            if (uses_float_acc && (mode == eltwise_mode::div || mode == eltwise_mode::mod || mode == eltwise_mode::floor_mod)) {
-                continue;
-            }
-            // Skip floor_mod for all integer types: the GPU kernel uses trunc() internally
-            // while CPU reference uses floor(). They diverge for negative non-exact quotients.
-            if (mode == eltwise_mode::floor_mod) {
-                continue;
-            }
-
             auto& engine = get_test_engine();
             auto input = engine.allocate_memory({ data_types::f32, format::yxfb,{ 2, 2, 2, 2 } });
             auto input2 = engine.allocate_memory({ data_types::f32, format::yxfb,{ 2, 2, 2, 2 } });
@@ -2595,35 +2579,22 @@ TEST(eltwise_gpu_int, basic_in4x4x4x4) {
             topology.add(eltwise("eltwise", { input_info("input_reorder"), input_info("input2_reorder") }, mode));
             topology.add(reorder("eltwise_reorder", input_info("eltwise"), { data_types::f32, format::yxfb,{ 2, 2, 2, 2 } }));
 
-            // For unsigned types, avoid negative values and ensure input1 >= input2
-            // to prevent wrapping and subtraction underflow.
-            std::vector<float> input_1_vec = is_unsigned ?
-                std::vector<float>{
-                    10.f,  4.f,  15.f,  3.f,
-                    12.f,  8.f,   6.f,  5.f,
-                    20.f, 18.f,   7.f, 12.f,
-                     9.f, 14.f,   8.f,  8.f
-                } :
-                std::vector<float>{
-                    1.f,   2.f,  5.f,  1.f,
-                    2.f,   3.f,  6.f,  5.f,
-                    3.f,   4.f, 7.f,  12.f,
-                    4.f,   1.f, 8.f,   8.f
-                };
+            // All values are positive with input_1 >= input_2 and no zero divisors,
+            // so all modes work correctly for both signed and unsigned types.
+            std::vector<float> input_1_vec = {
+                10.f,  4.f,  15.f,  3.f,
+                12.f,  8.f,   6.f,  5.f,
+                20.f, 18.f,   7.f, 12.f,
+                 9.f, 14.f,   8.f,  8.f
+            };
             set_values(input, input_1_vec);
 
-            std::vector<float> input_2_vec = is_unsigned ?
-                std::vector<float>{
-                    2.f,   2.f,  1.f,  1.f,
-                    4.f,   4.f,  2.f,  1.f,
-                    4.f,   2.f,  3.f,  4.f,
-                    2.f,   2.f,  2.f,  4.f
-                } :
-                std::vector<float>{
-                    1.f,  2.f,  3.f, -1.f,
-                    5.f,   7.f,   2.f,   2.f,
-                    15.f,  17.f,   8.f,   8.f,
-                    6.f,   8.f, 2.f,  10.f };
+            std::vector<float> input_2_vec = {
+                2.f,  2.f,  1.f,  1.f,
+                4.f,  4.f,  2.f,  1.f,
+                4.f,  2.f,  3.f,  4.f,
+                2.f,  2.f,  2.f,  4.f
+            };
             set_values(input2, input_2_vec);
 
             network network(engine, topology, get_test_default_config(engine));
@@ -2753,19 +2724,8 @@ TEST(eltwise_gpu_f32_int, basic_in4x4x4x4) {
 
     for (auto& data_type : data_types_to_test)
     {
-        bool is_unsigned = data_type == data_types::u8 || data_type == data_types::u16 || data_type == data_types::u32;
-        // INT8/INT16/UINT8/UINT16 use F32 accumulator, so division/modulo give float results
-        // not integer truncation. Skip these modes for small integer types.
-        bool uses_float_acc = data_type == data_types::i8 || data_type == data_types::i16 ||
-                              data_type == data_types::u8 || data_type == data_types::u16;
-
         for (auto& mode : eltwise_ops_to_test)
         {
-            // Skip div/mod for types with float accumulator - GPU does float division
-            if (uses_float_acc && (mode == eltwise_mode::div || mode == eltwise_mode::mod)) {
-                continue;
-            }
-
             auto& engine = get_test_engine();
             auto input = engine.allocate_memory({ data_types::f32, format::yxfb,{ 2, 2, 2, 2 } });
             auto input2 = engine.allocate_memory({ data_types::f32, format::yxfb,{ 2, 2, 2, 2 } });
@@ -2777,35 +2737,22 @@ TEST(eltwise_gpu_f32_int, basic_in4x4x4x4) {
             topology.add(eltwise("eltwise", { input_info("input_reorder"), input_info("input2") }, mode));
             topology.add(reorder("eltwise_reorder", input_info("eltwise"), { data_types::f32, format::yxfb,{ 2, 2, 2, 2 } }));
 
-            // For unsigned types, avoid negative values and ensure input1 >= input2
-            // to prevent wrapping and subtraction underflow.
-            std::vector<float> input_1_vec = is_unsigned ?
-                std::vector<float>{
-                    10.f,  4.f,  15.f,  3.f,
-                    12.f,  8.f,   6.f,  5.f,
-                    20.f, 18.f,   7.f, 12.f,
-                     9.f, 14.f,   8.f,  8.f
-                } :
-                std::vector<float>{
-                    1.f,   2.f,  5.f,  1.f,
-                    2.f,   3.f,  6.f,  5.f,
-                    3.f,   4.f, 7.f,  12.f,
-                    4.f,   1.f, 8.f,   8.f
-                };
+            // All values are positive with input_1 >= input_2 and no zero divisors,
+            // so all modes work correctly for both signed and unsigned types.
+            std::vector<float> input_1_vec = {
+                10.f,  4.f,  15.f,  3.f,
+                12.f,  8.f,   6.f,  5.f,
+                20.f, 18.f,   7.f, 12.f,
+                 9.f, 14.f,   8.f,  8.f
+            };
             set_values(input, input_1_vec);
 
-            std::vector<float> input_2_vec = is_unsigned ?
-                std::vector<float>{
-                    2.f,   2.f,  1.f,  1.f,
-                    4.f,   4.f,  2.f,  1.f,
-                    4.f,   2.f,  3.f,  4.f,
-                    2.f,   2.f,  2.f,  4.f
-                } :
-                std::vector<float>{
-                    1.f,  2.f,  3.f, -1.f,
-                    5.f,   7.f,   2.f,   2.f,
-                    15.f,  17.f,   8.f,   8.f,
-                    6.f,   8.f, 2.f,  10.f };
+            std::vector<float> input_2_vec = {
+                2.f,  2.f,  1.f,  1.f,
+                4.f,  4.f,  2.f,  1.f,
+                4.f,  2.f,  3.f,  4.f,
+                2.f,  2.f,  2.f,  4.f
+            };
             set_values(input2, input_2_vec);
 
             network network(engine, topology, get_test_default_config(engine));
